@@ -76,19 +76,23 @@ load_health_port_from_config() {
     if [ ! -f "$cfg_path" ]; then
         return
     fi
-    local parsed
+    local parsed=""
     if [ -x "$CLI_PATH" ]; then
-        parsed=$("$CLI_PATH" config health-port --config "$cfg_path" 2>/dev/null)
-    else
-        parsed=$(grep -m1 'health_port:' "$cfg_path" 2>/dev/null | sed 's/.*health_port:[[:space:]]*//' | tr -cd '0-9')
+        parsed=$("$CLI_PATH" config health-port --config "$cfg_path" 2>/dev/null || true)
+    fi
+    if [ -z "$parsed" ]; then
+        parsed=$(grep -m1 'health_port:' "$cfg_path" 2>/dev/null | sed 's/.*health_port:[[:space:]]*//' | tr -cd '0-9' || true)
     fi
     if [ -n "$parsed" ] && [ "$parsed" -ge 0 ] 2>/dev/null; then
         HEALTH_PORT="$parsed"
-        if [ "$HEALTH_PORT" -eq 0 ]; then
-            HEALTH_ENABLED=0
-        else
-            HEALTH_ENABLED=1
-        fi
+    else
+        # No health_port in the config: the node runs without a health endpoint.
+        HEALTH_PORT=0
+    fi
+    if [ "$HEALTH_PORT" -eq 0 ]; then
+        HEALTH_ENABLED=0
+    else
+        HEALTH_ENABLED=1
     fi
 }
 
@@ -666,7 +670,11 @@ wait_for_health() {
         return 1
     fi
     if [ "$HEALTH_ENABLED" -eq 0 ]; then
-        return 0
+        # No health endpoint to poll: make sure the service stays up instead
+        # of crash-looping (Restart=always would show it as activating).
+        sleep 5
+        systemctl is-active "$SERVICE_NAME" >/dev/null 2>&1
+        return
     fi
     local attempt=0
     local max_attempts=30
@@ -743,6 +751,8 @@ perform_upgrade() {
     install -m 755 "$TMP_DIR/xbctl" "$CLI_PATH"
     ln -sf "$CLI_PATH" /usr/bin/xbctl 2>/dev/null || true
     install -m 644 "$TMP_DIR/${SERVICE_NAME}" "$SERVICE_PATH"
+    # Check the health port this install actually uses, not the default.
+    load_health_port_from_config "$CONFIG_FILE"
     systemctl daemon-reload
     systemctl restart "$SERVICE_NAME"
     if ! wait_for_health; then
