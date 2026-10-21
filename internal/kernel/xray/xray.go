@@ -293,14 +293,19 @@ func (x *Xray) AddUsers(users []model.UserSpec) (int, error) {
 	}
 
 	// Merge: overwrite existing users' properties, collect truly new ones.
+	// A known ID with a new UUID (reset subscription) must be re-added too,
+	// otherwise only bookkeeping changes and the kernel keeps the old UUID.
 	userMap := make(map[int]model.UserSpec, len(x.users))
 	for _, u := range x.users {
 		userMap[u.ID] = u
 	}
-	var toAdd []model.UserSpec
+	var toAdd, replaced []model.UserSpec
 	for _, u := range users {
-		if _, exists := userMap[u.ID]; !exists {
+		if old, exists := userMap[u.ID]; !exists {
 			toAdd = append(toAdd, u)
+		} else if old.UUID != u.UUID {
+			toAdd = append(toAdd, u)
+			replaced = append(replaced, old)
 		}
 		userMap[u.ID] = u // always overwrite properties
 	}
@@ -335,6 +340,11 @@ func (x *Xray) AddUsers(users []model.UserSpec) (int, error) {
 	x.mu.Unlock()
 
 	ctx := context.Background()
+	for _, u := range replaced {
+		if err := um.RemoveUser(ctx, userEmail(u.ID)); err != nil {
+			nlog.Core().Debug("xray: RemoveUser skipped in AddUsers", "user", u.ID, "error", err)
+		}
+	}
 	added := 0
 	for _, u := range toAdd {
 		mu, err := toMemoryUser(proto, nc, u)
@@ -437,6 +447,20 @@ func (x *Xray) UpdateUsers(users []model.UserSpec) (added, removed int, err erro
 	toAdd, toRemove := kernel.UserDiff(x.users, users)
 	added, removed = len(toAdd), len(toRemove)
 
+	// UserDiff reports a UUID change on the same ID only in toAdd. xray keys
+	// users by email (user@ID), so the old entry has to be removed first or
+	// AddUser fails with "already exists" and the old UUID keeps working.
+	oldIDs := make(map[int]struct{}, len(x.users))
+	for _, u := range x.users {
+		oldIDs[u.ID] = struct{}{}
+	}
+	removeFirst := append([]model.UserSpec(nil), toRemove...)
+	for _, u := range toAdd {
+		if _, exists := oldIDs[u.ID]; exists {
+			removeFirst = append(removeFirst, u)
+		}
+	}
+
 	if added == 0 && removed == 0 {
 		// Only limits changed — update dispatcher without restart.
 		x.users = users
@@ -466,7 +490,7 @@ func (x *Xray) UpdateUsers(users []model.UserSpec) (added, removed int, err erro
 	ctx := context.Background()
 
 	// Remove first, then add (order matters for UUID changes on same ID)
-	for _, u := range toRemove {
+	for _, u := range removeFirst {
 		email := userEmail(u.ID)
 		if err := um.RemoveUser(ctx, email); err != nil {
 			nlog.Core().Debug("xray: RemoveUser skipped in UpdateUsers", "user", u.ID, "error", err)
