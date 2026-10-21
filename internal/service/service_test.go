@@ -199,6 +199,44 @@ func TestApplyUserDeltaAddPreparesLimiterBeforeKernelUpdate(t *testing.T) {
 }
 
 
+func TestApplyUserUpdateStartsStoppedKernelWithNewUsers(t *testing.T) {
+	// Node booted while its groups had no users, so the kernel never started.
+	k := &fakeKernel{}
+	s := newTestService(k)
+	s.lastConfig = &model.NodeSpec{Protocol: "vless"}
+	s.updateUserState(nil)
+
+	users := []model.UserSpec{{ID: 1, UUID: "uuid-1"}}
+	s.applyUserUpdate(context.Background(), users, computeUserHash(users))
+
+	if !k.running || k.startCalls != 1 {
+		t.Fatalf("kernel running=%v startCalls=%d, want started once", k.running, k.startCalls)
+	}
+	if len(s.lastUsers) != 1 || s.lastUserHash != computeUserHash(users) {
+		t.Fatalf("lastUsers = %#v, want the pushed users recorded", s.lastUsers)
+	}
+}
+
+func TestApplyUserDeltaAddStartsKernelStoppedAfterLastUserRemoved(t *testing.T) {
+	k := &fakeKernel{running: true}
+	s := newTestService(k)
+	s.lastConfig = &model.NodeSpec{Protocol: "vless"}
+	s.updateUserState([]model.UserSpec{{ID: 1, UUID: "uuid-1"}})
+
+	// Removing the last user stops the kernel (xray does this itself).
+	k.onRemoveUsers = func([]model.UserSpec) { k.running = false }
+	s.applyUserDelta(context.Background(), "remove", []model.UserSpec{{ID: 1}})
+
+	s.applyUserDelta(context.Background(), "add", []model.UserSpec{{ID: 2, UUID: "uuid-2"}})
+
+	if !k.running || k.startCalls != 1 {
+		t.Fatalf("kernel running=%v startCalls=%d, want restarted for the new user", k.running, k.startCalls)
+	}
+	if len(s.lastUsers) != 1 || s.lastUsers[0].ID != 2 {
+		t.Fatalf("lastUsers = %#v, want only the new user", s.lastUsers)
+	}
+}
+
 func TestValidateNodeRuntimeRejectsUnsupportedDNSProvider(t *testing.T) {
 	cfg := &config.Config{Kernel: config.KernelConfig{Type: "singbox"}}
 	err := validateNodeRuntime(cfg, []string{"http"}, &model.NodeSpec{

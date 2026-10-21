@@ -751,16 +751,19 @@ func (s *Service) startKernel(nc *model.NodeSpec, users []model.UserSpec) bool {
 	return true
 }
 
-// ensureRunning starts the kernel if it is not running and there are users +
-// config available. Returns true if the kernel is running afterwards.
-func (s *Service) ensureRunning() bool {
-	if s.kernel.IsRunning() {
-		return true
+// startWithUsers records users as the current set and starts the stopped
+// kernel with them. The kernel is stopped while a node has no users, so the
+// first users to arrive afterwards must start it here — checking the previous
+// (empty) lastUsers instead would drop them until the process restarts.
+func (s *Service) startWithUsers(users []model.UserSpec) {
+	prevUsers, prevHash := s.prepareUserState(users)
+	if len(users) == 0 || s.lastConfig == nil {
+		// Nothing to serve yet; applyChanges starts the kernel once config arrives.
+		return
 	}
-	if len(s.lastUsers) > 0 && s.lastConfig != nil {
-		return s.startKernel(s.lastConfig, s.lastUsers)
+	if !s.startKernel(s.lastConfig, users) {
+		s.restoreUserState(prevUsers, prevHash)
 	}
-	return false
 }
 
 // ─── User update entry points ───────────────────────────────────────────────
@@ -768,7 +771,8 @@ func (s *Service) ensureRunning() bool {
 // applyUserUpdate replaces the full user set and hot-swaps the kernel.
 // Called from WS sync.users and REST polling.
 func (s *Service) applyUserUpdate(ctx context.Context, users []model.UserSpec, newHash string) {
-	if !s.ensureRunning() {
+	if !s.kernel.IsRunning() {
+		s.startWithUsers(users)
 		return
 	}
 
@@ -800,7 +804,8 @@ func (s *Service) applyUserDelta(ctx context.Context, action string, deltaUsers 
 		}
 		merged := mergeUsers(s.lastUsers, deltaUsers)
 
-		if !s.ensureRunning() {
+		if !s.kernel.IsRunning() {
+			s.startWithUsers(merged)
 			return
 		}
 
@@ -835,6 +840,8 @@ func (s *Service) applyUserDelta(ctx context.Context, action string, deltaUsers 
 		filtered := subtractUsers(s.lastUsers, deltaUsers)
 
 		if !s.kernel.IsRunning() {
+			// Keep lastUsers accurate so a later start doesn't bring removed users back.
+			s.updateUserState(filtered)
 			return
 		}
 
