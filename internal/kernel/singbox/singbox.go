@@ -435,26 +435,35 @@ func (s *SingBox) AddUsers(users []model.UserSpec) (int, error) {
 		return 0, fmt.Errorf("not running")
 	}
 
-	existing := make(map[int]struct{}, len(s.users))
-	for _, u := range s.users {
-		existing[u.ID] = struct{}{}
+	// A known ID with a new UUID (reset subscription) replaces the old entry;
+	// skipping it as a duplicate would leave the inbound on the old UUID.
+	merged := append([]model.UserSpec{}, s.users...)
+	index := make(map[int]int, len(merged))
+	for i, u := range merged {
+		index[u.ID] = i
 	}
-	var toAdd []model.UserSpec
+	added := 0
 	for _, u := range users {
-		if _, dup := existing[u.ID]; !dup {
-			toAdd = append(toAdd, u)
+		if i, exists := index[u.ID]; exists {
+			if merged[i].UUID != u.UUID {
+				merged[i] = u
+				added++
+			}
+			continue
 		}
+		index[u.ID] = len(merged)
+		merged = append(merged, u)
+		added++
 	}
-	if len(toAdd) == 0 {
+	if added == 0 {
 		return 0, nil
 	}
 
-	merged := append(append([]model.UserSpec{}, s.users...), toAdd...)
 	if err := s.reloadInboundsLocked(merged); err != nil {
 		return 0, err
 	}
 	s.users = merged
-	return len(toAdd), nil
+	return added, nil
 }
 
 // RemoveUsers hot-swaps users out of running inbounds. Zero connection disruption
