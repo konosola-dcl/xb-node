@@ -1,7 +1,9 @@
 package xray
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -12,6 +14,7 @@ import (
 	xrayCore "github.com/xtls/xray-core/core"
 	featurebandwidth "github.com/xtls/xray-core/features/bandwidth"
 	xraystats "github.com/xtls/xray-core/features/stats"
+	ss2022 "github.com/xtls/xray-core/proxy/shadowsocks_2022"
 	"golang.org/x/time/rate"
 )
 
@@ -274,5 +277,31 @@ func TestXrayRemoveUsersStopsKernelWhenLastUserRemoved(t *testing.T) {
 	}
 	if x.IsRunning() {
 		t.Fatal("expected xray to stop when last user is removed")
+	}
+}
+
+func TestToMemoryUserSS2022KeyMatchesConfig(t *testing.T) {
+	// A user added at runtime must get the same key the generated config
+	// gives them, or clients fail authentication until the next restart.
+	nc := &model.NodeSpec{Protocol: "shadowsocks", Cipher: "2022-blake3-aes-128-gcm", ServerKey: "c2VydmVyLWtleS0xNmJ5dGU="}
+	u := model.UserSpec{ID: 7, UUID: "35b2af08-9507-4ebd-99fc-e4172286c88e"}
+
+	cfg := buildShadowsocks(M{}, nc, []model.UserSpec{u})
+	clients := cfg["settings"].(M)["clients"].([]M)
+	want, err := base64.StdEncoding.DecodeString(clients[0]["password"].(string))
+	if err != nil {
+		t.Fatalf("decode config password: %v", err)
+	}
+
+	mu, err := toMemoryUser("shadowsocks", nc, u)
+	if err != nil {
+		t.Fatalf("toMemoryUser: %v", err)
+	}
+	got := mu.Account.(*ss2022.MemoryAccount).Key
+	if len(got) != 16 {
+		t.Fatalf("key length = %d, want 16", len(got))
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("runtime key %x does not match config key %x", got, want)
 	}
 }

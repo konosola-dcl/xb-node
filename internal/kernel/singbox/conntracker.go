@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/buf"
 	singM "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -308,6 +309,15 @@ func (t *ConnTracker) RoutedPacketConnection(
 		limiter:    lim,
 		ctx:        ctx,
 	}
+}
+
+// RoutedFlow is called for flows routed at the TUN/L3 level. xboard-node only
+// serves proxy inbounds, so there is nothing to track.
+func (t *ConnTracker) RoutedFlow(
+	_ context.Context, _ adapter.InboundContext,
+	_ adapter.Rule, _ adapter.Outbound,
+) tun.FlowTracker {
+	return nil
 }
 
 // checkDeviceGate rejects connections exceeding device limit.

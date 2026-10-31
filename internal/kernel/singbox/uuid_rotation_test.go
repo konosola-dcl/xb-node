@@ -41,22 +41,15 @@ func (l *kernelLog) contains(s string) bool {
 	return false
 }
 
-func startVLESSSingBox(t *testing.T, users []model.UserSpec) (*SingBox, int, *kernelLog) {
+// captureKernelLog collects the log of any sing-box instance created inside
+// fn, since sing-box binds its logger to os.Stderr at creation.
+func captureKernelLog(t *testing.T, fn func()) *kernelLog {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("pick port: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
-
-	// sing-box binds its logger to os.Stderr when the instance is created.
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	stderr := os.Stderr
-	os.Stderr = w
+	t.Cleanup(func() { w.Close() })
 	logs := &kernelLog{}
 	go func() {
 		sc := bufio.NewScanner(r)
@@ -66,18 +59,31 @@ func startVLESSSingBox(t *testing.T, users []model.UserSpec) (*SingBox, int, *ke
 			logs.mu.Unlock()
 		}
 	}()
+	stderr := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+	fn()
+	return logs
+}
+
+func startVLESSSingBox(t *testing.T, users []model.UserSpec) (*SingBox, int, *kernelLog) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("pick port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
 
 	s := New(config.KernelConfig{Type: "singbox", LogLevel: "error"})
 	nc := &model.NodeSpec{Protocol: "vless", ServerPort: port, Network: "tcp"}
-	err = s.Start(nc, users, kernel.TLSCert{})
-	os.Stderr = stderr
+	logs := captureKernelLog(t, func() {
+		err = s.Start(nc, users, kernel.TLSCert{})
+	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	t.Cleanup(func() {
-		s.Stop()
-		w.Close()
-	})
+	t.Cleanup(s.Stop)
 	return s, port, logs
 }
 
@@ -137,5 +143,31 @@ func TestSingBoxAddUsersAppliesUUIDRotation(t *testing.T) {
 	}
 	if !vlessAccepted(t, port, logs, rotNewUUID) {
 		t.Fatal("new UUID rejected after AddUsers")
+	}
+}
+
+func TestSingBoxReloadRestartsOnSamePort(t *testing.T) {
+	// A changed config restarts the instance, so the old one has to release
+	// the port before the new one binds it, and the tracker has to survive so
+	// traffic not yet reported is kept.
+	s, port, _ := startVLESSSingBox(t, []model.UserSpec{{ID: 1, UUID: rotOldUUID}})
+	tracker := s.connTracker
+
+	nc := &model.NodeSpec{Protocol: "vless", ServerPort: port, Network: "tcp"}
+	var err error
+	logs := captureKernelLog(t, func() {
+		err = s.Reload(nc, []model.UserSpec{{ID: 1, UUID: rotNewUUID}}, kernel.TLSCert{})
+	})
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if s.connTracker != tracker {
+		t.Fatal("Reload replaced the connTracker")
+	}
+	if vlessAccepted(t, port, logs, rotOldUUID) {
+		t.Fatal("old UUID still accepted after Reload")
+	}
+	if !vlessAccepted(t, port, logs, rotNewUUID) {
+		t.Fatal("new UUID rejected after Reload")
 	}
 }
