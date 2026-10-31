@@ -2,7 +2,7 @@
 
 Node backend for [Xboard](https://github.com/cedar2025/Xboard). Supports `sing-box` / `xray-core` dual kernels.
 
-This is a fork of [cedar2025/Xboard-Node](https://github.com/cedar2025/Xboard-Node) with user-sync fixes (see [Changes in this fork](#changes-in-this-fork)). The installer, `xbctl upgrade` and the Docker image all download from this fork.
+This is a fork of [cedar2025/Xboard-Node](https://github.com/cedar2025/Xboard-Node) with user-sync fixes (see [Changes in this fork](#changes-in-this-fork)). The installer and `xbctl upgrade` download from this fork.
 
 > **Disclaimer**: This project is for educational and learning purposes only.
 
@@ -51,20 +51,22 @@ Nodes installed from upstream need this installer once. Their `xbctl upgrade` st
 
 ### Docker
 
+CI does not publish an image for this fork. Build one from the `Dockerfile` with `make docker`, which tags it `xboard-node:latest`, then run it:
+
 ```bash
 docker run -d --restart=always --network=host \
   -e apiHost=https://panel.com -e apiKey=TOKEN -e nodeID=1 \
-  ghcr.io/konosola-dcl/xboard-node:latest
+  xboard-node:latest
 ```
 
 ### Docker Compose
 
-The `compose` branch only exists upstream. Clone it and point the image at this fork:
+The `compose` branch only exists upstream. Build the image as above, then clone the branch and point it at the local image:
 
 ```bash
 git clone -b compose --depth 1 https://github.com/cedar2025/xboard-node.git
 cd xboard-node
-sed -i 's#ghcr.io/cedar2025/#ghcr.io/konosola-dcl/#' compose.yml
+sed -i 's#ghcr.io/cedar2025/xboard-node#xboard-node#' compose.yml
 vim config/config.yml   # set panel.url / token / node_id
 docker compose up -d
 ```
@@ -112,8 +114,6 @@ The binaries come from this fork's GitHub Releases. `.github/workflows/ci.yml` b
 
    CI runs the tests, builds `linux-amd64` and `linux-arm64`, and publishes the release as latest. The installer and `xbctl upgrade` download the latest release by default.
 3. Every push to `dev` also updates a rolling `dev` release. Install it with `--version dev`.
-
-Docker images go to `ghcr.io/konosola-dcl/xboard-node`. If `docker pull` asks for credentials, make the package public in its GitHub package settings.
 
 ## License
 
