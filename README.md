@@ -49,28 +49,6 @@ Check the running version with `xboard-node -v`.
 
 Nodes installed from upstream need this installer once. Their `xbctl upgrade` still downloads from upstream. After the switch, `xbctl upgrade` downloads from this fork.
 
-### Docker
-
-CI does not publish an image for this fork. Build one from the `Dockerfile` with `make docker`, which tags it `xboard-node:latest`, then run it:
-
-```bash
-docker run -d --restart=always --network=host \
-  -e apiHost=https://panel.com -e apiKey=TOKEN -e nodeID=1 \
-  xboard-node:latest
-```
-
-### Docker Compose
-
-The `compose` branch only exists upstream. Build the image as above, then clone the branch and point it at the local image:
-
-```bash
-git clone -b compose --depth 1 https://github.com/cedar2025/xboard-node.git
-cd xboard-node
-sed -i 's#ghcr.io/cedar2025/xboard-node#xboard-node#' compose.yml
-vim config/config.yml   # set panel.url / token / node_id
-docker compose up -d
-```
-
 ## xbctl
 
 Run `xbctl` after installation for help. Common commands:
