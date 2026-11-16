@@ -20,11 +20,11 @@ This is a fork of [cedar2025/Xboard-Node](https://github.com/cedar2025/Xboard-No
 
 ```bash
 # Node mode
-curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/dev/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/main/install.sh | \
   sudo bash -s -- --mode node --panel https://panel.example.com --token TOKEN --node-id 1
 
 # Machine mode
-curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/dev/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/main/install.sh | \
   sudo bash -s -- --mode machine --panel https://panel.example.com --token TOKEN --machine-id 1
 ```
 
@@ -35,7 +35,7 @@ Add `--kernel xray` to use xray-core (default: sing-box). Add `--version v1.13.1
 Existing nodes switch to this fork with one command, including nodes installed from upstream cedar2025:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/dev/install.sh | sudo bash -s -- upgrade
+curl -fsSL https://raw.githubusercontent.com/konosola-dcl/xb-node/main/install.sh | sudo bash -s -- upgrade
 ```
 
 The upgrade does the following:
@@ -91,7 +91,7 @@ The binaries come from this fork's GitHub Releases. `.github/workflows/ci.yml` b
    ```
 
    CI runs the tests, builds `linux-amd64` and `linux-arm64`, and publishes the release as latest. The installer and `xbctl upgrade` download the latest release by default.
-3. Every push to `dev` also updates a rolling `dev` release. Install it with `--version dev`.
+3. Every push to `main` also updates a rolling `dev` release. Install it with `--version dev`.
 
 ## License
 
