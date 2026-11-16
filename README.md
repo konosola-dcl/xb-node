@@ -91,7 +91,8 @@ The binaries come from this fork's GitHub Releases. `.github/workflows/ci.yml` b
    ```
 
    CI runs the tests, builds `linux-amd64` and `linux-arm64`, and publishes the release as latest. The installer and `xbctl upgrade` download the latest release by default.
-3. Every push to `main` also updates a rolling `dev` release. Install it with `--version dev`.
+
+Pushes to `main` only run the tests and builds; they never publish a release.
 
 ## License
 
