@@ -50,6 +50,7 @@ func buildConfig(kcfg config.KernelConfig, nc *model.NodeSpec, users []model.Use
 			"level":     kcfg.LogLevel,
 			"timestamp": true,
 		},
+		"dns":       defaultDNS(),
 		"outbounds": outbounds,
 	}
 
@@ -75,6 +76,27 @@ func buildConfig(kcfg config.KernelConfig, nc *model.NodeSpec, users []model.Use
 
 	mergeCustomSingbox(cfg, kcfg)
 	return cfg
+}
+
+// defaultDNSServer is the resolver sing-box uses for every lookup unless
+// kernel.custom_config supplies its own dns section.
+const defaultDNSServer = "8.8.8.8"
+
+// defaultDNS pins sing-box to a public resolver instead of the host's
+// /etc/resolv.conf. A host resolver that refuses recursion for the node's IP
+// (or an unreachable IPv6 nameserver listed first) makes every outbound lookup
+// fail with REFUSED/timeout, while curl on the same host still works because
+// glibc moves on to the next nameserver.
+//
+// Only one server is configured, so dns.final and route.default_domain_resolver
+// can stay unset: sing-box uses the sole server for both. That also means a
+// custom dns section replacing this one leaves no dangling tag reference.
+func defaultDNS() M {
+	return M{
+		"servers": []M{
+			{"type": "udp", "tag": "dns-default", "server": defaultDNSServer},
+		},
+	}
 }
 
 // outboundConfigToSingbox converts a structured OutboundConfig (from the panel)
@@ -361,7 +383,7 @@ func mergeCustomSingbox(cfg M, kcfg config.KernelConfig) {
 		return
 	}
 
-	// dns — custom replaces
+	// dns — custom replaces the built-in defaultDNS entirely
 	if v, ok := custom["dns"]; ok {
 		cfg["dns"] = v
 	}

@@ -1,9 +1,16 @@
 package singbox
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/sagernet/sing-box/include"
+	"github.com/sagernet/sing-box/option"
+	singJSON "github.com/sagernet/sing/common/json"
 
 	"github.com/cedar2025/xboard-node/internal/config"
 	"github.com/cedar2025/xboard-node/internal/kernel"
@@ -572,6 +579,52 @@ func TestBuildConfig_OutboundPriority(t *testing.T) {
 
 	if !foundDirect || !foundBlock {
 		t.Errorf("missing outbounds: direct=%v, block=%v", foundDirect, foundBlock)
+	}
+}
+
+func TestBuildConfig_DefaultDNSIgnoresSystemResolver(t *testing.T) {
+	nc := &panel.NodeConfig{Protocol: "shadowsocks", ServerPort: 111, Cipher: "aes-128-gcm"}
+	cfg := buildConfig(config.KernelConfig{LogLevel: "info"}, testNodeSpec(nc), testUsers, kernel.TLSCert{})
+
+	dns, ok := cfg["dns"].(M)
+	if !ok {
+		t.Fatalf("dns: got %T, want M", cfg["dns"])
+	}
+	servers, ok := dns["servers"].([]M)
+	if !ok || len(servers) != 1 {
+		t.Fatalf("dns.servers: got %#v, want exactly one server", dns["servers"])
+	}
+	assertMapValue(t, servers[0], "type", "udp")
+	assertMapValue(t, servers[0], "server", defaultDNSServer)
+
+	// Parse exactly like startLocked does, so a schema mismatch with the
+	// bundled sing-box version fails here instead of on a live node.
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if _, err := singJSON.UnmarshalExtendedContext[option.Options](include.Context(context.Background()), data); err != nil {
+		t.Fatalf("sing-box rejected generated config: %v", err)
+	}
+}
+
+func TestBuildConfig_CustomDNSReplacesDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom.json")
+	custom := `{"dns":{"servers":[{"type":"udp","tag":"custom","server":"1.1.1.1"}]}}`
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatalf("write custom config: %v", err)
+	}
+
+	nc := &panel.NodeConfig{Protocol: "shadowsocks", ServerPort: 111, Cipher: "aes-128-gcm"}
+	cfg := buildConfig(config.KernelConfig{LogLevel: "info", CustomConfig: path}, testNodeSpec(nc), testUsers, kernel.TLSCert{})
+
+	data, err := json.Marshal(cfg["dns"])
+	if err != nil {
+		t.Fatalf("marshal dns: %v", err)
+	}
+	want := `{"servers":[{"server":"1.1.1.1","tag":"custom","type":"udp"}]}`
+	if string(data) != want {
+		t.Errorf("dns: got %s, want %s", data, want)
 	}
 }
 
