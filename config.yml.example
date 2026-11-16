@@ -24,3 +24,13 @@
 #       token: "machine-token-2"
 #     log:
 #       level: "debug"   # override for this instance only
+
+# ── REST-only mode ──
+# The node uses WebSocket push whenever the panel offers it. Set ws.disable to
+# talk to the panel over the REST API only, e.g. on hosts with dynamic IPs.
+# Trade-offs: user/config changes apply on the next pull_interval instead of
+# instantly, and the cross-node device limit (pushed over WS) is not enforced.
+# Top-level ws.disable is inherited by every instance; an instance can set
+# its own `ws: { disable: false }` (or true) to override it.
+# ws:
+#   disable: true

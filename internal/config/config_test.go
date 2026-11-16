@@ -474,6 +474,73 @@ instances:
 	}
 }
 
+func TestLoad_WSDisable(t *testing.T) {
+	path := writeTemp(t, `
+panel:
+  url: "https://panel.example.com"
+  token: "secret-token"
+  node_id: 5
+ws:
+  disable: true
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.WS.Disabled() {
+		t.Error("ws.disable: true was not applied")
+	}
+}
+
+func TestLoadRoot_WSDisableInheritance(t *testing.T) {
+	path := writeTemp(t, `
+ws:
+  disable: true
+instances:
+  - panel:
+      url: "https://panel.example.com"
+      token: "tok-a"
+      node_id: 1
+  - panel:
+      url: "https://panel.example.com"
+      token: "tok-b"
+      node_id: 2
+    ws:
+      disable: false
+`)
+	root, err := LoadRoot(path)
+	if err != nil {
+		t.Fatalf("LoadRoot: %v", err)
+	}
+	if len(root.Instances) != 2 {
+		t.Fatalf("instances: got %d, want 2", len(root.Instances))
+	}
+	if !root.Instances[0].WS.Disabled() {
+		t.Error("inst0 should inherit top-level ws.disable: true")
+	}
+	if root.Instances[1].WS.Disabled() {
+		t.Error("inst1 ws.disable: false should override the top-level value")
+	}
+}
+
+func TestWSConfigDisabled(t *testing.T) {
+	yes, no := true, false
+	cases := []struct {
+		name string
+		in   *bool
+		want bool
+	}{
+		{"unset", nil, false},
+		{"false", &no, false},
+		{"true", &yes, true},
+	}
+	for _, tc := range cases {
+		if got := (WSConfig{Disable: tc.in}).Disabled(); got != tc.want {
+			t.Errorf("%s: Disabled() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestLoadRoot_InstanceOrderDoesNotAffectConfigDir(t *testing.T) {
 	yamlTmpl := func(first, second int) string {
 		return fmt.Sprintf(`

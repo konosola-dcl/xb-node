@@ -32,7 +32,7 @@ func NewPanelControlPlane(panelCfg config.PanelConfig, wsCfg config.WSConfig, kc
 }
 
 func (p *PanelControlPlane) SupportsPolling() bool       { return true }
-func (p *PanelControlPlane) SupportsDiscovery() bool     { return true }
+func (p *PanelControlPlane) SupportsDiscovery() bool     { return !p.wsCfg.Disabled() }
 func (p *PanelControlPlane) SupportsReporting() bool     { return true }
 func (p *PanelControlPlane) SupportsDeviceReports() bool { return true }
 
@@ -43,12 +43,15 @@ func (p *PanelControlPlane) Initial(ctx context.Context, metricsFn func() map[st
 	}
 
 	bootstrap := Bootstrap{PushInterval: hs.Settings.PushInterval, PullInterval: hs.Settings.PullInterval}
-	if hs.WebSocket.Enabled && hs.WebSocket.WSURL != "" {
+	switch {
+	case p.wsCfg.Disabled():
+		nlog.Core().Info("websocket disabled by local config (ws.disable), using REST API")
+	case hs.WebSocket.Enabled && hs.WebSocket.WSURL != "":
 		bootstrap.Push = p.newPushClient(metricsFn, events, statuses, hs.WebSocket.WSURL)
 		return bootstrap, nil
+	default:
+		nlog.Core().Info("websocket disabled, using REST API")
 	}
-
-	nlog.Core().Info("websocket disabled, using REST API")
 	configSnapshot, err := p.client.GetConfig()
 	if err != nil {
 		return Bootstrap{}, fmt.Errorf("initial config fetch: %w", err)
@@ -90,6 +93,9 @@ func (p *PanelControlPlane) Poll(ctx context.Context) (Snapshot, error) {
 }
 
 func (p *PanelControlPlane) Discover(ctx context.Context, metricsFn func() map[string]interface{}, events chan<- Event, statuses chan<- StatusChange) (PushClient, error) {
+	if p.wsCfg.Disabled() {
+		return nil, nil
+	}
 	hs, err := p.client.Handshake()
 	if err != nil {
 		return nil, fmt.Errorf("handshake: %w", err)

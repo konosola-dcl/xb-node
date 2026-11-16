@@ -58,11 +58,54 @@ func TestTranslateWSEventRejectsInvalidCustomOutbounds(t *testing.T) {
 	}
 }
 
+func TestPanelControlPlaneWSDisableForcesREST(t *testing.T) {
+	server := newPanelTestServerWithHandshake(
+		`{"websocket":{"enabled":true,"ws_url":"ws://127.0.0.1:1/ws"},"settings":{"push_interval":60,"pull_interval":60}}`,
+		`{"protocol":"shadowsocks","server_port":8388,"cipher":"aes-128-gcm"}`,
+	)
+	defer server.Close()
+	panelCfg := config.PanelConfig{URL: server.URL, Token: "token", NodeID: 1}
+	kcfg := config.KernelConfig{Type: "singbox"}
+
+	// Control: with ws.disable unset, this panel hands out a push client, so
+	// the assertions below are not passing vacuously.
+	enabled, err := NewPanelControlPlane(panelCfg, config.WSConfig{}, kcfg).Initial(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Initial (ws enabled): %v", err)
+	}
+	if enabled.Push == nil {
+		t.Fatal("expected a push client when the panel enables WS and ws.disable is unset")
+	}
+
+	disable := true
+	cp := NewPanelControlPlane(panelCfg, config.WSConfig{Disable: &disable}, kcfg)
+	bootstrap, err := cp.Initial(context.Background(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Initial (ws.disable): %v", err)
+	}
+	if bootstrap.Push != nil {
+		t.Error("ws.disable: Initial returned a push client")
+	}
+	if bootstrap.Config == nil || len(bootstrap.Users) != 1 {
+		t.Errorf("ws.disable: expected config and users fetched over REST, got config=%v users=%d", bootstrap.Config != nil, len(bootstrap.Users))
+	}
+	if cp.SupportsDiscovery() {
+		t.Error("ws.disable: SupportsDiscovery should be false so the service never re-enables WS")
+	}
+	if push, err := cp.Discover(context.Background(), nil, nil, nil); push != nil || err != nil {
+		t.Errorf("ws.disable: Discover = (%v, %v), want (nil, nil)", push, err)
+	}
+}
+
 func newPanelTestServer(configBody string) *httptest.Server {
+	return newPanelTestServerWithHandshake(`{"websocket":{"enabled":false},"settings":{"push_interval":60,"pull_interval":60}}`, configBody)
+}
+
+func newPanelTestServerWithHandshake(handshakeBody, configBody string) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v2/server/handshake", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"websocket":{"enabled":false},"settings":{"push_interval":60,"pull_interval":60}}`))
+		_, _ = w.Write([]byte(handshakeBody))
 	})
 	mux.HandleFunc("/api/v1/server/UniProxy/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

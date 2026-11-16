@@ -270,6 +270,10 @@ func (o *Orchestrator) reportMachineStatus() {
 // ─── WS mux ─────────────────────────────────────────────────────────────
 
 func (o *Orchestrator) tryStartWS(ctx context.Context) {
+	if o.cfg.WS.Disabled() {
+		nlog.Core().Info("machine: ws disabled by local config (ws.disable), REST only")
+		return
+	}
 	hs, err := o.client.Handshake()
 	if err != nil {
 		nlog.Core().Warn("machine ws handshake failed, REST only", "error", err)

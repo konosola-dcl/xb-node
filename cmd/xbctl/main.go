@@ -863,7 +863,7 @@ func writeRootConfig(path string, root *config.RootConfig) error {
 	if p.Runtime.GoMemLimit != "" || p.Runtime.GoGCPercent != 0 {
 		out.Runtime = &fileRuntimeConfig{GoMemLimit: p.Runtime.GoMemLimit, GoGCPercent: p.Runtime.GoGCPercent}
 	}
-	if p.WS.StatusInterval != 0 || p.WS.HandshakeTimeout != 0 || p.WS.BackoffInitial != 0 {
+	if wsConfigSet(p.WS) {
 		out.WS = &p.WS
 	}
 	if p.Cert.CertMode != "" || p.Cert.Domain != "" || p.Cert.CertFile != "" || p.Cert.AutoTLS {
@@ -919,7 +919,7 @@ func writeRootConfig(path string, root *config.RootConfig) error {
 		if inst.Cert.CertMode != "" || inst.Cert.Domain != "" || inst.Cert.CertFile != "" || inst.Cert.AutoTLS {
 			fi.Cert = &inst.Cert
 		}
-		if inst.WS.StatusInterval != 0 || inst.WS.HandshakeTimeout != 0 || inst.WS.BackoffInitial != 0 {
+		if wsConfigSet(inst.WS) {
 			fi.WS = &inst.WS
 		}
 		if len(inst.Nodes) > 0 {
@@ -932,6 +932,13 @@ func writeRootConfig(path string, root *config.RootConfig) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 	return os.WriteFile(path, data, 0o600)
+}
+
+// wsConfigSet reports whether any ws.* option is set, so writeRootConfig keeps
+// the section (including ws.disable) instead of silently dropping it.
+func wsConfigSet(w config.WSConfig) bool {
+	return w.Disable != nil || w.StatusInterval != 0 || w.HandshakeTimeout != 0 ||
+		w.BackoffInitial != 0 || w.BackoffMax != 0 || w.DiscoveryInterval != 0
 }
 
 func pruneCredentialKeys(path string, removed []config.Config) error {

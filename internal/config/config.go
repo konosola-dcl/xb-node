@@ -115,7 +115,16 @@ type WSConfig struct {
 	BackoffInitial    int `yaml:"backoff_initial"`    // initial reconnect delay (sec), default 1
 	BackoffMax        int `yaml:"backoff_max"`        // max reconnect delay (sec), default 60
 	DiscoveryInterval int `yaml:"discovery_interval"` // WS discovery interval (sec), default 300
+
+	// Disable keeps this node on REST polling even when the panel offers
+	// WebSocket push, e.g. for hosts on dynamic IPs where a half-open WS can
+	// go unnoticed for minutes. A pointer so an instance can override the
+	// top-level value in either direction; nil inherits it.
+	Disable *bool `yaml:"disable,omitempty"`
 }
+
+// Disabled reports whether ws.disable is explicitly set to true.
+func (w WSConfig) Disabled() bool { return w.Disable != nil && *w.Disable }
 
 type KernelConfig struct {
 	Type      string `yaml:"type"` // "singbox" or "xray"
@@ -486,6 +495,9 @@ func (c *Config) inheritFrom(parent *Config) {
 	}
 	if c.WS.DiscoveryInterval == 0 {
 		c.WS.DiscoveryInterval = parent.WS.DiscoveryInterval
+	}
+	if c.WS.Disable == nil {
+		c.WS.Disable = parent.WS.Disable
 	}
 	// Runtime
 	if c.Runtime.GoGCPercent == 0 {
