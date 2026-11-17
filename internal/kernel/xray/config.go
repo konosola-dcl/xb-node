@@ -417,7 +417,12 @@ func buildHysteria(base M, nc *model.NodeSpec, users []model.UserSpec, tc kernel
 			"email": userEmail(u.ID),
 		})
 	}
-	base["settings"] = M{"clients": clients}
+	// Xray 26.10.29+ rejects the inbound unless settings.version is 2,
+	// in addition to streamSettings.hysteriaSettings.version.
+	base["settings"] = M{
+		"version": nc.Version,
+		"clients": clients,
+	}
 
 	ss := M{
 		"network": "hysteria",
